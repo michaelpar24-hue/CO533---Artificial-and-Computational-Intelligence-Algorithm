@@ -1,0 +1,87 @@
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+from IPython.display import Markdown, display
+
+load_dotenv(override=True)
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
+
+def has_real_openai_key(value: str | None) -> bool:
+    if not value or not value.strip():
+        return False
+    cleaned = value.strip()
+    lowered = cleaned.lower()
+    if lowered in {"your_openai_api_key_here", "sk-your_key_here"}:
+        return False
+    if lowered.startswith("your_"):
+        return False
+    return cleaned.startswith("sk-")
+
+OPENAI_API_KEY = 'sk-proj-........-AX0e9Us0LIuL3nzicckA'
+
+OPENAI_ENABLED = has_real_openai_key(OPENAI_API_KEY) 
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
+
+print("OPENAI_MODEL (optional):", OPENAI_MODEL)
+print("OPENAI enabled:", OPENAI_ENABLED)
+print("OLLAMA_BASE_URL:", OLLAMA_BASE_URL)
+print("OLLAMA_MODEL:", OLLAMA_MODEL)
+
+#-------------------------------------- Lab01 Exercise ----------------------------------------------#
+if not OPENAI_ENABLED:
+    display(Markdown("**Skipped:** set a real `OPENAI_API_KEY` in `.env` to run this section."))
+else:
+    seed_topic = "function calling in agents"
+    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    messages = []
+    openai_turn1 = openai_client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages + [
+        {
+            "role": "user",
+            "content": f"Generate one strong interview question about {seed_topic}. Return the question only."
+        }
+        ],
+        temperature=1,
+    )
+
+    openai_assistant_question = openai_turn1.choices[0].message.content
+    messages.append({"role": "assistant", "content": openai_assistant_question})
+    display(Markdown("## OpenAI Turn 1: Question\n\n" + openai_assistant_question))
+
+    openai_turn2 = openai_client.chat.completions.create(
+        model=OPENAI_MODEL,
+         messages=messages + [
+            {
+                "role": "user",
+                "content": "Answer the question concisely for a beginner, then propose one follow-up question."
+            }
+            ],
+        temperature=1,
+    )
+
+
+    openai_assistant_question2 = openai_turn2.choices[0].message.content
+    messages.append({"role": "assistant", "content": openai_assistant_question2})
+    display(Markdown("## OpenAI Turn 2: Answer + Follow-up\n\n" + openai_turn2.choices[0].message.content))
+    
+    openai_turn3 = openai_client.chat.completions.create(
+        model=OPENAI_MODEL,
+         messages=messages + [
+            {"role": "user", "content": "Answer the follow-up question concisely."}
+        ],
+        temperature=1,
+    )
+
+
+    openai_assistant_question3 = openai_turn3.choices[0].message.content
+    messages.append({"role": "assistant", "content": openai_assistant_question3})
+    display(Markdown("## OpenAI Turn 3: Follow-up Answer\n\n" + openai_turn3.choices[0].message.content))
+
+
+
+
