@@ -1,5 +1,4 @@
 ## 🧠 Lab 01: LLM API Fundamentals and Multi-turn Context
-<img src="https://ollama.com/public/ollama.png" alt="Ollama Logo" width="120"/>
 - ▶️ [Watch Video](https://youtu.be/uTTOw8si5Jw)
 
 ---
