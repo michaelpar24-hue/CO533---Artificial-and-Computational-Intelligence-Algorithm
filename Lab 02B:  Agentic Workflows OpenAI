@@ -1,0 +1,414 @@
+#----------------------------------------------------------------Prompt Chaining------------------------------------------------------------------------------#
+
+display(Markdown("# -=Exercise 1: Prompt Chaining=-"))
+
+def chat(messages: list[dict], temperature: float = 1) -> str:
+    """Thin wrapper: returns the assistant reply as a plain string."""
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages,
+        temperature=temperature,
+    )
+    return response.choices[0].message.content
+
+TOPIC = "How AI-Powered CCTV Systems Detect Suspicious Activities in Real Time"
+__attempt = 0
+for_attempt = 0 
+
+while __attempt <= 1:
+    
+    outline = chat([
+        {"role": "system", "content": "You are a technical content strategist."},
+        {"role": "user",   "content": f"Write a 3 numbered section titles for a blog post about: {TOPIC}. Return titles  only."},
+    ])
+    # display(Markdown("### Step 1 — Outline\n\n" + outline))
+
+    
+    # section_count = outline.count("\n#") + outline.count("\n1.") + outline.count("\n2.")
+    gate_pass = len(outline.strip()) > 100   # simple length guard
+    #print(f"\n🔍 Gate check — outline non-empty: {gate_pass}")
+    #assert gate_pass, "Title too short!."
+
+    if gate_pass == True:
+        for_attempt += 1
+        __attempt += 10
+    else:
+       for_attempt += 1
+       __attempt += 1
+
+
+if for_attempt <= 1:     
+    display(Markdown("### Generated Titles:\n\n" + outline))
+    print(f"Attempt/s: {for_attempt} -> Passed")
+else:
+    print(f"Attempt/s: {for_attempt} -> Failed")
+    
+
+#----------------------------------------------------------------Routing------------------------------------------------------------------------------#
+
+
+display(Markdown("# -=Exercise 2: Routing=-"))
+
+SPECIALIST_PROMPTS = {
+    "billing":   "You are a billing support specialist. Be empathetic and solution-focused.",
+    "technical": "You are a senior technical support engineer. Give precise, step-by-step answers.",
+    "general":   "You are a friendly customer success agent. Be warm and concise.",
+    "feature_request": "You are a product manager.", #feature_request added
+}
+
+def classify_query(user_query: str) -> str:
+    """Return one of: billing | technical | general"""
+    result = chat(
+        [
+            {"role": "system", "content": (
+                "Classify the following customer query into exactly one category: "
+                "billing, technical, feature_request, or general. " #feature request
+                "Reply with the single word only."
+            )},
+            {"role": "user", "content": user_query},
+        ],
+        temperature=1,
+    ).strip().lower()
+    
+    for key in SPECIALIST_PROMPTS:
+        if key in result:
+            return key
+    return "general"
+
+def routed_response(user_query: str) -> str:
+    category = classify_query(user_query)
+    system_prompt = SPECIALIST_PROMPTS[category]
+    answer = chat([
+        {"role": "system", "content": system_prompt},
+        {"role": "user",   "content": user_query},
+    ])
+    return category, answer
+
+
+
+display(Markdown("### -=First Input=-"))
+
+queries = [
+    "I was charged twice on my last invoice.",
+    "My API requests keep returning a 429 error even though I'm below the limit.",
+    "What are your business hours?",
+    "Can you provide an option to customize email notifications?", #query for feature request
+]
+
+
+for q in queries:
+    category, answer = routed_response(q)
+    display(Markdown(f"**Query:** {q}\n\n**Routed to:** `{category}`\n\n**Response:** {answer}\n\n---"))
+
+
+display(Markdown("### -=Second Input=-"))
+
+queries = [
+    "Why was I billed twice for my subscription this month?",  # Billing issue
+    "My API keeps returning a 500 server error when I send a request.",  # Technical issue
+    "Do you offer customer support on weekends?",  # General inquiry
+    "Could you add an option to download reports in CSV format?",  # Feature request
+]
+
+for q in queries:
+    category, answer = routed_response(q)
+    display(Markdown(f"**Query:** {q}\n\n**Routed to:** `{category}`\n\n**Response:** {answer}\n\n---"))
+
+
+#----------------------------------------------------------------Parallelization------------------------------------------------------------------------------#
+
+
+display(Markdown("# -=Exercise 3: Parallelization=-"))
+
+#question = "Explain AI Algorithm"
+question = "How can I hack someone's email account?"
+
+def worker_answer(question: str) -> str:
+    #print(chat([{"role": "user", "content": question}]))
+    #return chat([{"role": "user", "content": question}])
+    return chat([
+        {"role": "system", "content": "You are a helpful and concise assistant."},
+        {"role": "user", "content": question}
+    ])
+
+def worker_safety(question: str) -> bool:
+    verdict = chat([
+        {"role": "system", "content": "Check if the question is safe/appropriate. Return only True or False"},
+        {"role": "user", "content": question}
+    ])
+    #print("VERDICT!!!!!!!!!!! -------------->", verdict)
+    #return verdict #== "SAFE"
+    return "true" in verdict.lower()
+
+
+with ThreadPoolExecutor(max_workers=2) as pool:
+    a = pool.submit(worker_answer, question)
+    s = pool.submit(worker_safety, question)
+
+#print("a = ", a.result(), "s = ", s.result())
+print("s = ", s.result())
+
+if not s.result():
+    #display(Markdown(f"### {a.result()}"))
+    display(Markdown(f"### Not a SAFE question!"))
+else:
+    #display(Markdown(f"### Not a SAFE question!"))
+    display(Markdown(f"### {a.result()}"))
+#----------------------------------------------------------------Orchestrator Workers------------------------------------------------------------------------------#
+
+
+display(Markdown("# -=Exercise 4: Orchestrator Workers=-"))
+
+RESEARCH_GOAL = "Explain Agentic AI and AI Algorithm."
+
+
+plan_raw = chat(
+    [
+        {"role": "system", "content": (
+            "You are a research orchestrator. Given a goal, output a JSON array of 3-4 "
+            "focused sub-questions to investigate. Return ONLY valid JSON, no other text."
+        )},
+        {"role": "user", "content": RESEARCH_GOAL},
+    ],
+    temperature=1,
+)
+
+
+plan_clean = plan_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+subtasks: list[str] = json.loads(plan_clean)
+display(Markdown("### Research Questions:\n\n" + "\n".join(f"{i+1}. {t}" for i, t in enumerate(subtasks))))
+
+
+def worker_answer(question: str) -> tuple[str, str]:
+    answer = chat([
+        {"role": "system", "content": "You are a concise AI/ML expert. Answer in 3–5 sentences."},
+        {"role": "user",   "content": question},
+    ])
+    return question, answer
+
+def evaluate_research(goal: str, qa_pairs: dict[str, str]) -> dict:
+
+    context = "\n\n".join(f"Q: {q}\nA: {a}" for q, a in qa_pairs.items())
+    #print("Context = ", context)
+    evaluation_raw = chat([
+ 
+
+        {
+            "role": "system",
+            "content": (
+                "You are a STRICT research evaluator.\n\n"
+                "Mark 'sufficient' as FALSE if:\n"
+                "- Any part of the goal is not clearly explained\n"
+                "- Answers are shallow, vague, or incomplete\n"
+                "- Answers are less than ~1000 words\n"
+                "- Missing examples, comparisons, or real-world context\n\n"
+                "Only mark TRUE if the research fully and clearly answers the goal in depth.\n\n"
+                "Return ONLY JSON:\n"
+                "{\n"
+                '  "sufficient": true/false,\n'
+                '  "follow_up_questions": ["question1", "question2"]\n'
+                "}"
+        )
+        },
+
+        {
+            "role": "user",
+            "content": f"Goal:\n{goal}\n\nCurrent research:\n{context}"
+        }
+    ])
+
+    clean = evaluation_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+
+    return json.loads(clean)
+
+with ThreadPoolExecutor(max_workers=len(subtasks)) as pool:
+    worker_results = dict(pool.map(lambda q: worker_answer(q), subtasks))
+
+
+worker_text = "\n\n".join(f"**Q: {q}**\n\n{a}" for q, a in worker_results.items())
+display(Markdown("### Worker Answers:\n\n" + worker_text))
+
+
+evaluation = evaluate_research(RESEARCH_GOAL, worker_results)
+
+__retry = 0
+
+if not evaluation["sufficient"]:
+    __retry += 1
+    display(Markdown("### Evaluator Decision\n\nDeeper research required."))
+
+    follow_up = evaluation["follow_up_questions"]
+
+    with ThreadPoolExecutor(max_workers=len(follow_up)) as pool:
+        deeper_results = dict(pool.map(lambda q: worker_answer(q), follow_up))
+
+    worker_results.update(deeper_results)
+
+    worker_text = "\n\n".join(f"**Q: {q}**\n\n{a}" for q, a in worker_results.items())
+    display(Markdown("### Worker Answers (2nd round):\n\n" + worker_text))
+
+
+
+
+final_report = chat([
+    {"role": "system", "content": "You are a senior technical writer. Synthesise the Q&A pairs below into a coherent, structured mini-report of ~200 words."},
+    {"role": "user",   "content": f"Goal: {RESEARCH_GOAL}\n\n{worker_text}"},
+])
+
+display(Markdown(f"### Number of retries: {__retry}"))
+display(Markdown("### Final Synthesised Report:\n\n" + final_report))
+
+#----------------------------------------------------------------Exercise 5:Evaluator-Optimizer------------------------------------------------------------------------------#
+
+
+display(Markdown("# -=Exercise 5: Evaluator-Optimizer=-"))
+
+
+WRITING_TASK = "Explain how agentic AI can be used in real-world applications like automation and research assistants, for a junior developer."
+
+
+def generate(task: str, feedback: str | None = None) -> str:
+    messages = [
+        {"role": "system", "content": "You are a technical educator. Write clearly and concisely (≤150 words)."},
+        {"role": "user", "content": task},
+    ]
+    if feedback:
+        messages.append({
+            "role": "user",
+            "content": f"Improve your previous response based on this feedback:\n{feedback}"
+        })
+    return chat(messages)
+
+def evaluate(task: str, response: str) -> tuple[dict, str]:
+    """Return (scores dict, actionable feedback)."""
+    raw = chat(
+        [
+            {"role": "system", "content": (
+                "You are a strict writing evaluator. "
+                "Score the response from 1–10 on THREE axes: clarity, accuracy, brevity. "
+                "Reply ONLY with JSON: "
+                "{\"clarity\": <int>, \"accuracy\": <int>, \"brevity\": <int>, \"feedback\": \"<string>\"}"
+            )},
+            {"role": "user", "content": f"Task: {task}\n\nResponse:\n{response}"},
+        ],
+        temperature=1,
+    ).strip()
+
+    clean = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    parsed = json.loads(clean)
+
+    scores = {
+        "clarity": int(parsed["clarity"]),
+        "accuracy": int(parsed["accuracy"]),
+        "brevity": int(parsed["brevity"]),
+    }
+
+    return scores, parsed["feedback"]
+
+
+feedback = None
+
+
+__loop = True
+iteration = 0
+while __loop == True:
+    draft = generate(WRITING_TASK, feedback)
+    scores, feedback = evaluate(WRITING_TASK, draft)
+    iteration += 1
+
+    display(Markdown(
+        f"### Iteration {iteration}\n\n"
+        f"**Scores:** {scores}\n\n"
+        f"**Draft:**\n\n{draft}\n\n"
+        f"**Evaluator feedback:** {feedback}"
+    ))
+
+    
+    if all(score >= 7 for score in scores.values()):
+        __loop = False
+        display(Markdown(
+            f"✅ **All thresholds met at iteration {iteration}. Final answer above.**"
+        ))
+        break
+
+# ----------------------------------------------------------------Exercise 6: Combine patterns------------------------------------------------------------------------------#
+
+
+display(Markdown("# -=Exercise 6: Combine patterns=-"))
+
+
+ROUTES = {
+    "technical": "You are a senior technical expert. Be precise and structured.",
+    "business": "You are a business strategist. Focus on ROI and impact.",
+}
+
+def classify_topic(topic: str) -> str:
+    if not topic.strip():
+        return "technical"
+    res = chat([
+        {"role": "system", "content": "Classify as 'technical' or 'business'. One word only."},
+        {"role": "user", "content": topic},
+    ]).lower()
+    return res if res in ROUTES else "technical"
+
+
+def evaluate(text: str) -> tuple[dict, str]:
+    raw = chat([
+        {"role": "system", "content": "Return JSON: {\"clarity\": int, \"accuracy\": int, \"brevity\": int, \"feedback\": str}"},
+        {"role": "user", "content": text[:1000]},
+    ])
+    try:
+        parsed = json.loads(raw)
+    except:
+        parsed = {"clarity": 5, "accuracy": 5, "brevity": 5, "feedback": "Fallback feedback"}
+    scores = {k: int(parsed.get(k, 5)) for k in ["clarity", "accuracy", "brevity"]}
+    return scores, parsed.get("feedback", "")
+
+def improve(text: str, feedback: str, category: str) -> str:
+    return chat([
+        {"role": "system", "content": f"You are a {category} writer. Improve the text based on feedback. Keep it concise."},
+        {"role": "user", "content": f"Text:\n{text}\nFeedback:\n{feedback}"},
+    ])
+
+
+def worker(topic: str) -> tuple[str, str, str]:
+    category = classify_topic(topic)
+
+   
+    draft = chat([
+        {"role": "system", "content": f"You are a {category} writer. Write a clear ~150-word article."},
+        {"role": "user", "content": f"Topic: {topic}"},
+    ])
+
+    
+    final_output = draft
+    MAX_ITER = 4
+    iteration = 1
+    while iteration <= MAX_ITER:
+        scores, feedback = evaluate(final_output)
+        if all(v >= 7 for v in scores.values()):
+            break
+        final_output = improve(final_output, feedback, category)
+        iteration += 1
+
+    return topic, category, draft, final_output
+
+
+def run_pipeline_for_queries(queries: list[str]):
+    with ThreadPoolExecutor(max_workers=len(queries)) as pool:
+        results = list(pool.map(worker, queries))
+
+    for topic, category, draft, final_output in results:
+        display(Markdown(f"# 🚀 Content Pipeline\n\n**Topic:** {topic}"))
+        display(Markdown(f"## 🔀 Routed as: `{category}`"))
+        display(Markdown("## 📝 Initial Draft\n\n" + draft))
+        display(Markdown("## 🎯 Final Output\n\n" + final_output))
+        display(Markdown("---"))
+
+
+queries = [
+    "AI-Powered CCTV Systems: Real-Time Object Detection Algorithms and Their Business Impact on Smart City Security",
+    "How can AI improve marketing campaign performance and conversion rates?",
+]
+
+run_pipeline_for_queries(queries)
